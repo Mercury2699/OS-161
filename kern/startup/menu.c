@@ -290,6 +290,21 @@ cmd_quit(int nargs, char **args)
 }
 
 /*
+ * Command for enabling the output of debugging messages of type DB_THREADS.
+ */
+static
+int
+cmd_dbthreads(int nargs, char **args)
+{
+	(void)nargs;
+	(void)args;
+
+	dbflags = DB_THREADS;
+
+	return 0;
+}
+
+/*
  * Command for mounting a filesystem.
  */
 
@@ -431,6 +446,7 @@ static const char *opsmenu[] = {
 	"[mount]   Mount a filesystem        ",
 	"[unmount] Unmount a filesystem      ",
 	"[bootfs]  Set \"boot\" filesystem     ",
+	"[dth]     Enable DB THREADS messages",
 	"[pf]      Print a file              ",
 	"[cd]      Change directory          ",
 	"[pwd]     Print current directory   ",
@@ -549,6 +565,7 @@ static struct {
 	{ "q",		cmd_quit },
 	{ "exit",	cmd_quit },
 	{ "halt",	cmd_quit },
+	{ "dth",	cmd_dbthreads },
 
 #if OPT_SYNCHPROBS
 	/* in-kernel synchronization problem(s) */
