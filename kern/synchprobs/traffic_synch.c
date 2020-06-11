@@ -23,7 +23,8 @@
  */
 static struct cv * CVS[4];
 static struct lock * intersection;
-static volatile int waited[4] = {0,0,0,0};
+static volatile int entered[4] = {0,0,0,0}, total = 0, waited[4] = {-1,-1,-1,-1};
+
 
 
 /* 
@@ -84,19 +85,18 @@ intersection_before_entry(Direction origin, Direction destination)
   /* replace this default implementation with your own implementation */
   // (void)origin;  /* avoid compiler complaint about unused parameter */
   (void)destination; /* avoid compiler complaint about unused parameter */
+  total++;
   lock_acquire(intersection);
-  bool mustWait = false;
+  int intersectionCount = 0;
   for (unsigned i = 0; i < 4; i++){
-    if (waited[i] != 0 && i != origin) mustWait = true;
+    if (i == origin) continue;
+    intersectionCount += entered[i];
   }
-  while(mustWait){
+  if (intersectionCount != 0){
+    if(waited[origin] == -1) waited[origin] = total;
     cv_wait(CVS[origin],intersection);
-    mustWait = false;
-    for (unsigned i = 0; i < 4; i++){
-      if (waited[i] != 0 && i != origin) mustWait = true;
-    }
   }
-  waited[origin]++;
+  entered[origin]++;
   lock_release(intersection);
 }
 
@@ -119,9 +119,20 @@ intersection_after_exit(Direction origin, Direction destination)
   // (void)origin;  /* avoid compiler complaint about unused parameter */
   (void)destination; /* avoid compiler complaint about unused parameter */
   lock_acquire(intersection);
-  waited[origin]--;
-  for(unsigned i = 0; i < 4; i++){
-    if (i != origin) cv_broadcast(CVS[i],intersection);
+  entered[origin]--;
+  if (entered[0] == 0 && entered[1] == 0 && entered[2] == 0 && entered[3] == 0){
+    int smallest = 2147483647;
+    enum Directions d = 4;
+    for (unsigned i = 0; i < 4; i++){
+      if (smallest > waited[i] && waited[i] != -1){
+        d = i;
+        smallest = waited[i];
+      } 
+    }
+    if (d != 4){
+      waited[d] = -1;
+      cv_broadcast(CVS[d],intersection);
+    }
   }
   lock_release(intersection);
 }
