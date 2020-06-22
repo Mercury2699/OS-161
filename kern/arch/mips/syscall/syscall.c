@@ -182,11 +182,18 @@ syscall(struct trapframe *tf)
  * Thus, you can trash it and do things another way if you prefer.
  */
 void
+#if OPT_A2
+enter_forked_process(void *tf, unsigned long garbage)
+{
+	(void)garbage;
+	struct trapframe tf_c = *(struct trapframe *)tf; // Shallow copy is enough
+	tf_c.tf_v0 = 0;
+	tf_c.tf_a3 = 0;
+	tf_c.tf_epc += 4;
+	mips_usermode(&tf_c);
+#else
 enter_forked_process(struct trapframe *tf)
 {
-#if OPT_A2
-	(void)tf;
-#else
 	(void)tf;
 #endif // OPT_A2
 }

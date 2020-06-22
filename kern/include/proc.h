@@ -41,6 +41,7 @@
 #include "opt-A2.h"
 		
 #if OPT_A2
+#include <synch.h>
 #include <array.h>
 struct lock * destroyLock;
 struct lock * PIDLock;

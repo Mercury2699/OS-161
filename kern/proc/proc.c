@@ -246,11 +246,11 @@ proc_bootstrap(void)
   }
 #endif // UW 
 #if OPT_A2
-  PIDCounter = 1;
   PIDLock = lock_create("pidlk");
   if (PIDLock == NULL){
 	  panic("could not create PIDLock\n");
   }
+  PIDCounter = 1;
   destroyLock = lock_create("dlk");
   if (destroyLock == NULL){
 	  panic("could not create destroyLock\n");
@@ -320,6 +320,12 @@ proc_create_runprogram(const char *name)
 	V(proc_count_mutex);
 #endif // UW
 
+#if OPT_A2
+  lock_acquire(PIDLock);
+  PIDCounter++;
+  proc->PID = PIDCounter;
+  lock_release(PIDLock);
+#endif
 	return proc;
 }
 

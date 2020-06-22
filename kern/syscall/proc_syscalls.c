@@ -9,6 +9,11 @@
 #include <thread.h>
 #include <addrspace.h>
 #include <copyinout.h>
+#include "opt-A2.h"
+
+#if OPT_A2
+#include <mips/trapframe.h>
+#endif
 
   /* this implementation of sys__exit does not do anything with the exit code */
   /* this needs to be fixed to get exit() and waitpid() working properly */
@@ -55,8 +60,13 @@ sys_getpid(pid_t *retval)
 {
   /* for now, this is just a stub that always returns a PID of 1 */
   /* you need to fix this to make it work properly */
+#if OPT_A2
+  *retval = curproc->PID;
+  return 0;
+#else
   *retval = 1;
   return(0);
+#endif
 }
 
 /* stub handler for waitpid() system call                */
@@ -92,3 +102,53 @@ sys_waitpid(pid_t pid,
   return(0);
 }
 
+#if OPT_A2
+int
+sys_fork(struct trapframe *tf, 
+          pid_t *retval)
+{
+  struct proc * forked = proc_create_runprogram("forked");
+  if (forked == NULL) {
+    DEBUG(DB_SYSCALL, "sys_fork cannot create process structure, ENOMEM");
+    return ENOMEM;
+  }
+
+  struct addrspace * as_cpy;
+  as_copy(curproc_getas(), &as_cpy);
+  if (as_cpy == NULL){
+    proc_destroy(forked);
+    DEBUG(DB_SYSCALL, "sys_fork cannot create addrspace, ENOMEM");
+    return ENOMEM;
+  }
+
+  struct trapframe * tf_copy = kmalloc(sizeof(struct trapframe));
+  if (tf_copy == NULL){
+    proc_destroy(forked);
+    as_destroy(as_cpy);
+    DEBUG(DB_SYSCALL, "sys_fork cannot create trapframe, ENOMEM");
+    return ENOMEM;
+  }
+
+  *tf_copy = *tf;
+
+  // curproc_setas
+  lock_acquire(forked->plock);
+  forked->p_addrspace = as_cpy;
+  array_add(forked->children, forked, NULL);
+  forked->parent = curproc;
+	lock_release(forked->plock);
+
+  if(thread_fork("forkedt", forked, enter_forked_process, tf_copy, 65536) != 0){
+    kfree(tf_copy);
+    as_destroy(forked->p_addrspace);
+    proc_destroy(forked);
+    DEBUG(DB_SYSCALL, "sys_fork cannot thread_fork, ENOMEM");
+    return ENOMEM;
+  }
+
+  KASSERT(forked->PID > 0);
+  *retval = forked->PID;
+
+  return 0;
+}
+#endif // OPT_A2
