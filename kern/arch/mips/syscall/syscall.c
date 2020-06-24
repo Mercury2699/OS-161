@@ -186,6 +186,7 @@ void
 enter_forked_process(void *tf, unsigned long garbage)
 {
 	(void)garbage;
+	KASSERT(tf);
 	struct trapframe tf_c = *(struct trapframe *)tf; // Shallow copy is enough
 	tf_c.tf_v0 = 0;
 	tf_c.tf_a3 = 0;
