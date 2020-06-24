@@ -105,29 +105,29 @@ proc_create(const char *name)
 #endif // UW
 
 #if OPT_A2
-	proc->parent = NULL;
-	proc->p_cv = cv_create("pcv");
-  if (proc->p_cv == NULL){
-    kfree(proc);
-    kfree(proc->p_name);
+		proc->parent = NULL;
+		proc->p_cv = cv_create("pcv");
+	if (proc->p_cv == NULL){
+		kfree(proc);
+		kfree(proc->p_name);
+			return NULL;
+	}
+		proc->plock = lock_create("plk");
+	if (proc->plock == NULL){
+		kfree(proc);
+		kfree(proc->p_name);
+		cv_destroy(proc->p_cv);
 		return NULL;
-  }
-	proc->plock = lock_create("plk");
-  if (proc->plock == NULL){
-    kfree(proc);
-    kfree(proc->p_name);
-    cv_destroy(proc->p_cv);
-    return NULL;
-  }
-  proc->children = array_create();
-  if (proc->children == NULL){
-    kfree(proc);
-    kfree(proc->p_name);
-    cv_destroy(proc->p_cv);
-    lock_destroy(proc->plock);
-    return NULL;
-  }
-	proc->exitCode = -1;
+	}
+	proc->children = array_create();
+	if (proc->children == NULL){
+		kfree(proc);
+		kfree(proc->p_name);
+		cv_destroy(proc->p_cv);
+		lock_destroy(proc->plock);
+		return NULL;
+	}
+		proc->exitCode = -1;
 #endif
 
 	return proc;
@@ -147,7 +147,9 @@ proc_destroy(struct proc *proc)
          * be defined because the calling thread may have already detached itself
          * from the process.
 	 */
-
+#if OPT_A2
+	lock_acquire(destroyLock);
+#endif
 	KASSERT(proc != NULL);
 	KASSERT(proc != kproc);
 
@@ -194,13 +196,13 @@ proc_destroy(struct proc *proc)
 	spinlock_cleanup(&proc->p_lock);
 
 #if OPT_A2
-  KASSERT(proc->p_cv);
-  KASSERT(proc->plock);
-  KASSERT(proc->children);
-  cv_destroy(proc->p_cv);
-  lock_destroy(proc->plock);
-  array_setsize(proc->children,0);
-  array_cleanup(proc->children);
+	KASSERT(proc->p_cv);
+	KASSERT(proc->plock);
+	KASSERT(proc->children);
+	cv_destroy(proc->p_cv);
+	lock_destroy(proc->plock);
+	array_setsize(proc->children,0);
+	array_cleanup(proc->children);
 #endif
 
 	kfree(proc->p_name);
@@ -220,8 +222,9 @@ proc_destroy(struct proc *proc)
 	}
 	V(proc_count_mutex);
 #endif // UW
-	
-
+#if OPT_A2
+	lock_release(destroyLock);	
+#endif
 }
 
 /*
@@ -230,32 +233,32 @@ proc_destroy(struct proc *proc)
 void
 proc_bootstrap(void)
 {
-  kproc = proc_create("[kernel]");
-  if (kproc == NULL) {
-    panic("proc_create for kproc failed\n");
-  }
-#ifdef UW
-  proc_count = 0;
-  proc_count_mutex = sem_create("proc_count_mutex",1);
-  if (proc_count_mutex == NULL) {
-    panic("could not create proc_count_mutex semaphore\n");
-  }
-  no_proc_sem = sem_create("no_proc_sem",0);
-  if (no_proc_sem == NULL) {
-    panic("could not create no_proc_sem semaphore\n");
-  }
-#endif // UW 
-#if OPT_A2
-  PIDLock = lock_create("pidlk");
-  if (PIDLock == NULL){
-	  panic("could not create PIDLock\n");
-  }
-  PIDCounter = 1;
-  destroyLock = lock_create("dlk");
-  if (destroyLock == NULL){
-	  panic("could not create destroyLock\n");
-  }
-  kproc->PID = 1;
+	kproc = proc_create("[kernel]");
+	if (kproc == NULL) {
+		panic("proc_create for kproc failed\n");
+	}
+	#ifdef UW
+	proc_count = 0;
+	proc_count_mutex = sem_create("proc_count_mutex",1);
+	if (proc_count_mutex == NULL) {
+		panic("could not create proc_count_mutex semaphore\n");
+	}
+	no_proc_sem = sem_create("no_proc_sem",0);
+	if (no_proc_sem == NULL) {
+		panic("could not create no_proc_sem semaphore\n");
+	}
+	#endif // UW 
+	#if OPT_A2
+	PIDCounter = 1;
+	kproc->PID = 1;
+	PIDLock = lock_create("pidlk");
+	if (PIDLock == NULL){
+		panic("could not create PIDLock\n");
+	}
+	destroyLock = lock_create("dlk");
+	if (destroyLock == NULL){
+		panic("could not create destroyLock\n");
+	}
 #endif
 }
 
@@ -321,10 +324,10 @@ proc_create_runprogram(const char *name)
 #endif // UW
 
 #if OPT_A2
-  lock_acquire(PIDLock);
-  PIDCounter++;
-  proc->PID = PIDCounter;
-  lock_release(PIDLock);
+	lock_acquire(PIDLock);
+	PIDCounter++;
+	proc->PID = PIDCounter;
+	lock_release(PIDLock);
 #endif
 	return proc;
 }

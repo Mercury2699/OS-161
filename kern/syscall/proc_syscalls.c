@@ -13,6 +13,7 @@
 
 #if OPT_A2
 #include <mips/trapframe.h>
+#include <wchan.h>
 #endif
 
   /* this implementation of sys__exit does not do anything with the exit code */
@@ -23,6 +24,7 @@ void sys__exit(int exitcode) {
   struct addrspace *as;
   struct proc *p = curproc;
 #if OPT_A2
+  KASSERT(p);
   p->exitCode = exitcode;
 #else
   /* for now, just include this to keep the compiler from complaining about
@@ -49,18 +51,24 @@ void sys__exit(int exitcode) {
   proc_remthread(curthread);
 
 #if OPT_A2
-  if (p->parent != NULL){
-    lock_acquire(p->plock);
-    cv_signal(p->p_cv, p->plock);
-    lock_release(p->plock);
-  } else {
+
+
+  if (p->parent != NULL){ //If parent exists
+    if (wchan_isempty(p->p_cv->wchan)) {// Parent have not called wait on child
+      proc_destroy(p);
+    } else { // Parent is waiting on child
+      lock_acquire(p->plock);
+      cv_signal(p->p_cv, p->plock);
+      lock_release(p->plock);
+    }
+  } else if (p->parent == NULL || p->parent->exitCode != -1 || p->parent == kproc || p != NULL) { // No parent or parent died
     proc_destroy(p);
   }
-#else
+#else 
   /* if this is the last user process in the system, proc_destroy()
-     will wake up the kernel menu thread */
+     will wake up the kernel menu thread */2
   proc_destroy(p);
-#endif  
+#endif
 
   thread_exit();
   /* thread_exit() does not return, so we should never get here */
@@ -110,6 +118,11 @@ sys_waitpid(pid_t pid,
     return(EINVAL);
   }
 #if OPT_A2
+  if(status == NULL){
+    DEBUG(DB_SYSCALL, "sys_waitpid status parameter is NULL");
+	  return EFAULT;
+  }
+
   struct proc * targetChild = NULL;
   for(unsigned i = 0; i < array_num(curproc->children); i++){
    struct proc * currChild = array_get(curproc->children, i);
@@ -126,17 +139,12 @@ sys_waitpid(pid_t pid,
 
   KASSERT(targetChild->parent == curproc);
 
-  lock_acquire(targetChild->plock);
   if (targetChild->exitCode == -1){
     DEBUG(DB_SYSCALL, "sys_waitpid sleeping for child");
+    lock_acquire(targetChild->plock);
     cv_wait(targetChild->p_cv, targetChild->plock);
-  }
-  lock_release(targetChild->plock);
-
-  if(status == NULL){
-    DEBUG(DB_SYSCALL, "sys_waitpid status parameter is NULL");
-	  return EFAULT;
-  }
+    lock_release(targetChild->plock);
+  } // Here the child must have exited
 
   exitstatus = _MKWAIT_EXIT(targetChild->exitCode);
 
@@ -148,7 +156,7 @@ sys_waitpid(pid_t pid,
   if (result) {
     return(result);
   }
-  *retval = pid;
+  *retval = targetChild->PID;
 #if OPT_A2
   proc_destroy(targetChild);
 #endif
