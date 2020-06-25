@@ -105,6 +105,7 @@ proc_create(const char *name)
 #endif // UW
 
 #if OPT_A2
+	proc->exited = false;
 	proc->parent = NULL;
 	proc->p_cv = cv_create("pcv");
   if (proc->p_cv == NULL){

@@ -23,6 +23,7 @@ void sys__exit(int exitcode) {
   struct addrspace *as;
   struct proc *p = curproc;
 #if OPT_A2
+  lock_acquire(destroyLock);
   p->exitCode = exitcode;
 #else
   /* for now, just include this to keep the compiler from complaining about
@@ -49,6 +50,17 @@ void sys__exit(int exitcode) {
   proc_remthread(curthread);
 
 #if OPT_A2
+
+  for(unsigned i = 0; i < array_num(p->children); i++){
+   struct proc * currChild = array_get(p->children, i);
+   if (currChild != NULL){
+    currChild->parent = NULL;
+    if(currChild->exited == 1){
+      proc_destroy(currChild);
+    }
+   }
+  }
+
   if (p->parent != NULL){
     lock_acquire(p->plock);
     cv_signal(p->p_cv, p->plock);
@@ -56,6 +68,8 @@ void sys__exit(int exitcode) {
   } else {
     proc_destroy(p);
   }
+  p->exited = true;
+  lock_release(destroyLock);
 #else
   /* if this is the last user process in the system, proc_destroy()
      will wake up the kernel menu thread */
@@ -115,6 +129,7 @@ sys_waitpid(pid_t pid,
    struct proc * currChild = array_get(curproc->children, i);
    if (currChild->PID == pid) {
      targetChild = currChild;
+     array_remove(curproc->children, i);
      break;
    }
   }
