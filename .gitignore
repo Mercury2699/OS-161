@@ -50,3 +50,9 @@ modules.order
 Module.symvers
 Mkfile.old
 dkms.conf
+
+# Ignore OS161 compiled binaries.
+# Just as these will not be submitted by
+# cs350-submit either.
+kern/compile/*
+os

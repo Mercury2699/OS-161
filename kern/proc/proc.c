@@ -50,6 +50,7 @@
 #include <vfs.h>
 #include <synch.h>
 #include <kern/fcntl.h>  
+#include "opt-A2.h"
 
 /*
  * The process for the kernel; this holds all the kernel-only threads.
@@ -102,6 +103,33 @@ proc_create(const char *name)
 #ifdef UW
 	proc->console = NULL;
 #endif // UW
+
+#if OPT_A2
+	proc->exited = false;
+	proc->parent = NULL;
+	proc->p_cv = cv_create("pcv");
+  if (proc->p_cv == NULL){
+    kfree(proc);
+    kfree(proc->p_name);
+		return NULL;
+  }
+	proc->plock = lock_create("plk");
+  if (proc->plock == NULL){
+    kfree(proc);
+    kfree(proc->p_name);
+    cv_destroy(proc->p_cv);
+    return NULL;
+  }
+  proc->children = array_create();
+  if (proc->children == NULL){
+    kfree(proc);
+    kfree(proc->p_name);
+    cv_destroy(proc->p_cv);
+    lock_destroy(proc->plock);
+    return NULL;
+  }
+	proc->exitCode = -1;
+#endif
 
 	return proc;
 }
@@ -166,6 +194,16 @@ proc_destroy(struct proc *proc)
 	threadarray_cleanup(&proc->p_threads);
 	spinlock_cleanup(&proc->p_lock);
 
+#if OPT_A2
+  KASSERT(proc->p_cv);
+  KASSERT(proc->plock);
+  KASSERT(proc->children);
+  cv_destroy(proc->p_cv);
+  lock_destroy(proc->plock);
+  array_setsize(proc->children,0);
+  array_cleanup(proc->children);
+#endif
+
 	kfree(proc->p_name);
 	kfree(proc);
 
@@ -208,6 +246,18 @@ proc_bootstrap(void)
     panic("could not create no_proc_sem semaphore\n");
   }
 #endif // UW 
+#if OPT_A2
+  PIDLock = lock_create("pidlk");
+  if (PIDLock == NULL){
+	  panic("could not create PIDLock\n");
+  }
+  PIDCounter = 1;
+  destroyLock = lock_create("dlk");
+  if (destroyLock == NULL){
+	  panic("could not create destroyLock\n");
+  }
+  kproc->PID = 1;
+#endif
 }
 
 /*
@@ -271,6 +321,12 @@ proc_create_runprogram(const char *name)
 	V(proc_count_mutex);
 #endif // UW
 
+#if OPT_A2
+  lock_acquire(PIDLock);
+  PIDCounter++;
+  proc->PID = PIDCounter;
+  lock_release(PIDLock);
+#endif
 	return proc;
 }
 
