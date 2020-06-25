@@ -82,6 +82,7 @@ struct proc {
 #if OPT_A2
 	pid_t PID;
 	int exitCode;
+	bool exited;
 	struct proc * parent;
 	struct array * children;
 	struct cv * p_cv; // Parents will wait on this if they waitpid
