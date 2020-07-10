@@ -227,7 +227,7 @@ sys_fork(struct trapframe *tf,
   return 0;
 }
 
-int copyoutargs(int argc, char ** argv, vaddr_t * stackptr){
+int copyoutargs(int argc, char * argv[], vaddr_t * stackptr){
   *stackptr = ROUNDUP(*stackptr,8);
   vaddr_t argvptrs[argc+1];
   for(int i = argc; i >= 0; i--){
@@ -235,7 +235,7 @@ int copyoutargs(int argc, char ** argv, vaddr_t * stackptr){
       argvptrs[i] = 0; continue;
     }
     int arglen = strlen(argv[i]) + 1;
-    *stackptr -= ROUNDUP(arglen, 8);
+    *stackptr -= arglen;
     int result = copyoutstr(argv[i], (userptr_t)*stackptr, arglen, NULL);
     if (result) return result;
     argvptrs[i] = *stackptr;

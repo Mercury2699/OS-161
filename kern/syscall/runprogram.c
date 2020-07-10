@@ -55,7 +55,7 @@
  */
 int
 #if OPT_A2
-runprogram(char *progname, int argc, char ** argv)
+runprogram(char *progname, int argc, char * argv[])
 #else
 runprogram(char *progname)
 #endif
@@ -64,9 +64,6 @@ runprogram(char *progname)
 	struct vnode *v;
 	vaddr_t entrypoint, stackptr;
 	int result;
-
-	(void) argc;
-	(void) argv;
 
 	/* Open the file. */
 	result = vfs_open(progname, O_RDONLY, 0, &v);
