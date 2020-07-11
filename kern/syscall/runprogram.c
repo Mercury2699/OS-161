@@ -44,6 +44,8 @@
 #include <vfs.h>
 #include <syscall.h>
 #include <test.h>
+#include "opt-A2.h"
+#include <copyinout.h>
 
 /*
  * Load program "progname" and start running it in usermode.
@@ -52,7 +54,11 @@
  * Calls vfs_open on progname and thus may destroy it.
  */
 int
+#if OPT_A2
+runprogram(char *progname, int argc, char * argv[])
+#else
 runprogram(char *progname)
+#endif
 {
 	struct addrspace *as;
 	struct vnode *v;
@@ -61,6 +67,7 @@ runprogram(char *progname)
 
 	/* Open the file. */
 	result = vfs_open(progname, O_RDONLY, 0, &v);
+	
 	if (result) {
 		return result;
 	}
@@ -97,10 +104,17 @@ runprogram(char *progname)
 		return result;
 	}
 
+#if OPT_A2
+	// Copy Args
+	result = copyoutargs(argc, argv, &stackptr);
+	/* Warp to user mode. */
+	enter_new_process(argc /*argc*/, (userptr_t) stackptr /*userspace addr of argv*/,
+			  stackptr, entrypoint);
+#else
 	/* Warp to user mode. */
 	enter_new_process(0 /*argc*/, NULL /*userspace addr of argv*/,
 			  stackptr, entrypoint);
-	
+#endif
 	/* enter_new_process does not return. */
 	panic("enter_new_process returned\n");
 	return EINVAL;
