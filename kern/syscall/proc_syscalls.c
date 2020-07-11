@@ -13,6 +13,8 @@
 
 #if OPT_A2
 #include <mips/trapframe.h>
+#include <kern/fcntl.h>
+#include <vfs.h>
 #endif
 
   /* this implementation of sys__exit does not do anything with the exit code */
@@ -224,4 +226,172 @@ sys_fork(struct trapframe *tf,
 
   return 0;
 }
+
+int copyoutargs(int argc, char * argv[], vaddr_t * stackptr){
+  *stackptr = ROUNDUP(*stackptr,8);
+  vaddr_t argvptrs[argc+1];
+  for(int i = argc; i >= 0; i--){
+    if (i == argc) {
+      argvptrs[i] = 0; continue;
+    }
+    int arglen = strlen(argv[i]) + 1;
+    *stackptr -= arglen;
+    int result = copyoutstr(argv[i], (userptr_t)*stackptr, arglen, NULL);
+    if (result) return result;
+    argvptrs[i] = *stackptr;
+  }
+  for(;(*stackptr) % 4; (*stackptr)--);
+  for(int i = argc ; i >= 0; i--){
+    int padding = ROUNDUP(sizeof(*stackptr), 4);
+    *stackptr -= padding;
+    int result = copyout(&argvptrs[i], (userptr_t) *stackptr, sizeof(vaddr_t));
+    if (result) return result;
+  }
+  return 0;
+}
+
+int
+sys_execv(const char * progname, char * args[])
+{
+  // Copied from runprogram
+	struct addrspace *as;
+	struct vnode *v;
+	vaddr_t entrypoint, stackptr;
+	int result;
+  // end copy
+
+  if (progname == NULL || args == NULL) return EFAULT;
+
+  /* Count arguments */
+  int argc;
+  for(argc = 0; args[argc] != NULL; argc++);
+  // kprintf("I counted argc = %d\n", argc);
+
+  /* Copy arguments to kernel */
+  char ** kargv = kmalloc((argc+1)*(sizeof(char*)));
+  for (int i = 0; i < argc; i++){
+    kargv[i] = kmalloc((strlen(args[i])+1)*sizeof(char));
+    if (kargv[i] == NULL) {
+      kfree(kargv);
+      return ENOMEM;
+    }
+    int err = copyinstr((const_userptr_t) args[i], kargv[i], (strlen(args[i])+1)*sizeof(char), NULL);
+    if (err) {
+      for(;i >= 0; i--) kfree(kargv[i]);
+      kfree(kargv);
+      return err;
+    }
+  }
+  kargv[argc] = NULL;
+
+  // for (int i = 0; i < argc; i++){
+  //   kprintf("I copied arg: %s\n", kargv[i]);
+  // }
+
+  /* Copy program path to kernel */
+  char * kprogname = kmalloc((strlen(progname)+1) * sizeof(char));
+  if (kprogname == NULL){
+    for(int i = 0; i < argc; i++) kfree(kargv[i]);
+    kfree(kargv);
+    return ENOMEM;
+  }
+  int err = copyinstr((const_userptr_t) progname, kprogname, strlen(progname)+1, NULL);
+  if (err) {
+    for(int i = 0; i < argc; i++) kfree(kargv[i]);
+    kfree(kargv);
+    kfree(kprogname);
+    return err;
+  }
+  // kprintf("I copied progname to kernel: %s\n", kprogname);
+
+  // Copied from runprogram
+	/* Open the file. */
+	result = vfs_open(kprogname, O_RDONLY, 0, &v);
+	if (result) {
+    for(int i = 0; i < argc; i++) kfree(kargv[i]);
+    kfree(kargv);
+    kfree(kprogname);
+		return result;
+	}
+
+	/* We should NOT be a new process. */
+	// KASSERT(curproc_getas() == NULL);
+
+  // Swap a new addrspace
+  struct addrspace * old_as = curproc_getas();
+  as = as_create();
+  if (as == NULL){
+    for(int i = 0; i < argc; i++) kfree(kargv[i]);
+    kfree(kargv);
+    kfree(kprogname);
+		vfs_close(v);
+		return ENOMEM;
+  }
+  curproc_setas(as);
+  as_activate();
+
+	/* Create a new address space. */
+	as = as_create();
+	if (as == NULL) {
+    for(int i = 0; i < argc; i++) kfree(kargv[i]);
+    kfree(kargv);
+    kfree(kprogname);
+		vfs_close(v);
+		return ENOMEM;
+	}
+
+	/* Switch to it and activate it. */
+	curproc_setas(as);
+	as_activate();
+
+	/* Load the executable. */
+	result = load_elf(v, &entrypoint);
+	if (result) {
+    for(int i = 0; i < argc; i++) kfree(kargv[i]);
+    kfree(kargv);
+    kfree(kprogname);
+		/* p_addrspace will go away when curproc is destroyed */
+		vfs_close(v);
+    curproc_setas(old_as);
+    as_destroy(as);
+		return result;
+	}
+
+	/* Done with the file now. */
+	vfs_close(v);
+
+	/* Define the user stack in the address space */
+	result = as_define_stack(as, &stackptr);
+	if (result) {
+    for(int i = 0; i < argc; i++) kfree(kargv[i]);
+    kfree(kargv);
+    kfree(kprogname);
+		/* p_addrspace will go away when curproc is destroyed */
+    curproc_setas(old_as);
+    as_destroy(as);
+		return result;
+	}
+
+  result = copyoutargs(argc, kargv, &stackptr);
+  if (result) {
+    for(int i = 0; i < argc; i++) kfree(kargv[i]);
+    kfree(kargv);
+    kfree(kprogname);
+    curproc_setas(old_as);
+    as_destroy(as);
+    return result;
+  }
+
+  for(int i = 0; i < argc; i++) kfree(kargv[i]);
+  kfree(kargv);
+  kfree(kprogname);
+
+	/* Warp to user mode. */
+	enter_new_process(argc, (userptr_t) stackptr, stackptr, entrypoint);
+	
+	/* enter_new_process does not return. */
+	panic("enter_new_process returned\n");
+	return EINVAL;
+}
+
 #endif // OPT_A2
