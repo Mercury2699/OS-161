@@ -37,6 +37,7 @@
 #include <mips/tlb.h>
 #include <addrspace.h>
 #include <vm.h>
+#include "opt-A3.h"
 
 /*
  * Dumb MIPS-only "VM system" that is intended to only be just barely
@@ -51,10 +52,22 @@
  */
 static struct spinlock stealmem_lock = SPINLOCK_INITIALIZER;
 
+#if OPT_A3
+typedef struct coremap{
+	paddr_t start;
+} coremap;
+
+static coremap cm;
+static bool coremapcreated = false;
+#endif 
+
 void
 vm_bootstrap(void)
 {
-	/* Do nothing. */
+#if OPT_A3
+	paddr_t max, min;
+	ram_getsize(&min, &max);
+#endif
 }
 
 static
@@ -121,7 +134,11 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 	switch (faulttype) {
 	    case VM_FAULT_READONLY:
 		/* We always create pages read-write, so we can't get this */
+#if OPT_A3
+		return EINVAL;
+#else
 		panic("dumbvm: got VM_FAULT_READONLY\n");
+#endif
 	    case VM_FAULT_READ:
 	    case VM_FAULT_WRITE:
 		break;
@@ -199,10 +216,21 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 		splx(spl);
 		return 0;
 	}
-
+	#if OPT_A3
+	ehi = faultaddress;
+	elo = paddr | TLBLO_DIRTY | TLBLO_VALID;
+	if (readonly)
+		elo &= ~TLBLO_DIRTY;
+	tlb_random(ehi, elo);
+	#else
 	kprintf("dumbvm: Ran out of TLB entries - cannot handle page fault\n");
+	#endif
 	splx(spl);
+	#if OPT_A3
+	return 0;
+	#else
 	return EFAULT;
+	#endif
 }
 
 struct addrspace *
