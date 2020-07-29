@@ -52,7 +52,7 @@
  */
 static struct spinlock stealmem_lock = SPINLOCK_INITIALIZER;
 
-#if OPT_A3
+#if 0
 typedef struct coremap{
 	paddr_t start;
 } coremap;
@@ -64,7 +64,7 @@ static bool coremapcreated = false;
 void
 vm_bootstrap(void)
 {
-#if OPT_A3
+#if 0
 	paddr_t max, min;
 	ram_getsize(&min, &max);
 #endif
@@ -126,6 +126,7 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 	uint32_t ehi, elo;
 	struct addrspace *as;
 	int spl;
+	bool r_o = false;
 
 	faultaddress &= PAGE_FRAME;
 
@@ -187,6 +188,7 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 
 	if (faultaddress >= vbase1 && faultaddress < vtop1) {
 		paddr = (faultaddress - vbase1) + as->as_pbase1;
+		r_o = true;
 	}
 	else if (faultaddress >= vbase2 && faultaddress < vtop2) {
 		paddr = (faultaddress - vbase2) + as->as_pbase2;
@@ -211,26 +213,30 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 		}
 		ehi = faultaddress;
 		elo = paddr | TLBLO_DIRTY | TLBLO_VALID;
+#if OPT_A3
+		if (r_o && as->elf_loaded)
+			elo &= ~TLBLO_DIRTY;
+#endif
 		DEBUG(DB_VM, "dumbvm: 0x%x -> 0x%x\n", faultaddress, paddr);
 		tlb_write(ehi, elo, i);
 		splx(spl);
 		return 0;
 	}
-	#if OPT_A3
+#if OPT_A3
 	ehi = faultaddress;
 	elo = paddr | TLBLO_DIRTY | TLBLO_VALID;
-	if (readonly)
+	if (r_o && as->elf_loaded)
 		elo &= ~TLBLO_DIRTY;
 	tlb_random(ehi, elo);
-	#else
+#else
 	kprintf("dumbvm: Ran out of TLB entries - cannot handle page fault\n");
-	#endif
+#endif
 	splx(spl);
-	#if OPT_A3
+#if OPT_A3
 	return 0;
-	#else
+#else
 	return EFAULT;
-	#endif
+#endif
 }
 
 struct addrspace *
@@ -248,7 +254,9 @@ as_create(void)
 	as->as_pbase2 = 0;
 	as->as_npages2 = 0;
 	as->as_stackpbase = 0;
-
+#if OPT_A3
+	as->elf_loaded = false;
+#endif
 	return as;
 }
 
