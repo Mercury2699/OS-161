@@ -52,21 +52,33 @@
  */
 static struct spinlock stealmem_lock = SPINLOCK_INITIALIZER;
 
-#if 0
-typedef struct coremap{
-	paddr_t start;
-} coremap;
-
-static coremap cm;
+#if OPT_A3
+/*
+ * Array of unsigned for coremap. e.g. 12011230: 3 allocations
+ * If contiguously allocated, values must increase strictly by 1. Unallocated : 0.
+ * Correlated address calculated by: vlo + index * PageSize
+ */
+static unsigned int * coremap; 
 static bool coremapcreated = false;
-#endif 
+static int virtualframes;
+static paddr_t vlo;
+#endif
 
 void
 vm_bootstrap(void)
 {
-#if 0
+#if OPT_A3
 	paddr_t max, min;
-	ram_getsize(&min, &max);
+	ram_getsize(&min, &max); 
+	int allframes = (max - min) / PAGE_SIZE;
+	coremap = (paddr_t *)PADDR_TO_KVADDR(min);
+	min += ROUNDUP(allframes * sizeof(unsigned int), PAGE_SIZE); 
+	virtualframes = (max - min) / PAGE_SIZE;
+	vlo = min;
+	for(int i = 0; i < virtualframes; i++){
+		coremap[i] = 0;
+	}
+	coremapcreated = true;
 #endif
 }
 
@@ -77,9 +89,53 @@ getppages(unsigned long npages)
 	paddr_t addr;
 
 	spinlock_acquire(&stealmem_lock);
-
+#if OPT_A3
+	if (coremapcreated){
+		int start = 0, end = 0, needed = (int) npages;
+		for (int i = 0; i < virtualframes ; i++){
+			find:
+			if (i >= virtualframes) {
+				start = -1;
+				end = -1; 
+				break;
+			}
+			if (coremap[i] == 0) {
+				start = i;
+				int count = 0;
+				for (int j = needed - 1; j > 0; j--, count++){
+					if (i+count < virtualframes && coremap[i+count] == 0){
+						continue;
+					} else { 
+						i += count;
+						start = 0;
+						goto find;
+					}
+				}
+				end = start + npages - 1;
+				break;
+			} else {
+				continue;
+			}
+		}
+		if (start == -1) {
+			addr = 0;// Out of Memory
+		} else {
+			for (int i = start; i <= end; i++){
+				KASSERT(coremap[i] == 0);
+			}
+			for (int i = 1; i <= needed; i++){
+				coremap[start+i-1] = i;
+			}
+			addr = vlo + start * PAGE_SIZE;
+		}
+		
+		
+	} else {
+		addr = ram_stealmem(npages);
+	}
+#else
 	addr = ram_stealmem(npages);
-	
+#endif
 	spinlock_release(&stealmem_lock);
 	return addr;
 }
@@ -99,9 +155,30 @@ alloc_kpages(int npages)
 void 
 free_kpages(vaddr_t addr)
 {
+#if OPT_A3
+	
+	if (false){
+		spinlock_acquire(&stealmem_lock);
+		int index = (addr - MIPS_KSEG0 - vlo) / PAGE_SIZE - 1;
+		KASSERT(index < virtualframes);
+		for (int i = 0; index + i < virtualframes; i++){
+			coremap[index+i] = 0;
+			if (index + i + 1 < virtualframes){
+				if (coremap[index+i+1] == (unsigned int)i+2){
+					continue;
+				} else {
+					break;
+				}
+			}
+		}
+		spinlock_release(&stealmem_lock);
+	}
+	
+#else 
 	/* nothing - leak the memory. */
-
+	
 	(void)addr;
+#endif
 }
 
 void
