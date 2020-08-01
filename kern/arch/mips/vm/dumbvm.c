@@ -102,12 +102,12 @@ getppages(unsigned long npages)
 			if (coremap[i] == 0) {
 				start = i;
 				int count = 0;
-				for (int j = needed - 1; j > 0; j--, count++){
+				for (int j = needed; j > 0; j--, count++){
 					if (i+count < virtualframes && coremap[i+count] == 0){
 						continue;
 					} else { 
 						i += count;
-						start = 0;
+						start = -1;
 						goto find;
 					}
 				}
@@ -263,8 +263,8 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 	stacktop = USERSTACK;
 
 	if (faultaddress >= vbase1 && faultaddress < vtop1) {
-		paddr = (faultaddress - vbase1) + as->as_pbase1;
 		r_o = true;
+		paddr = (faultaddress - vbase1) + as->as_pbase1;
 	}
 	else if (faultaddress >= vbase2 && faultaddress < vtop2) {
 		paddr = (faultaddress - vbase2) + as->as_pbase2;
@@ -299,8 +299,8 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 		return 0;
 	}
 #if OPT_A3
-	ehi = faultaddress;
 	elo = paddr | TLBLO_DIRTY | TLBLO_VALID;
+	ehi = faultaddress;
 	if (r_o && as->elf_loaded)
 		elo &= ~TLBLO_DIRTY;
 	tlb_random(ehi, elo);
@@ -340,9 +340,9 @@ void
 as_destroy(struct addrspace *as)
 {
 #if OPT_A3
+	free_kpages(PADDR_TO_KVADDR(as->as_stackpbase));
 	free_kpages(PADDR_TO_KVADDR(as->as_pbase1));
 	free_kpages(PADDR_TO_KVADDR(as->as_pbase2));
-	free_kpages(PADDR_TO_KVADDR(as->as_stackpbase));
 #endif
 	kfree(as);
 }
