@@ -156,10 +156,9 @@ void
 free_kpages(vaddr_t addr)
 {
 #if OPT_A3
-	
-	if (false){
+	if (coremapcreated){
 		spinlock_acquire(&stealmem_lock);
-		int index = (addr - MIPS_KSEG0 - vlo) / PAGE_SIZE - 1;
+		int index = (addr - MIPS_KSEG0 - vlo) / PAGE_SIZE;
 		KASSERT(index < virtualframes);
 		for (int i = 0; index + i < virtualframes; i++){
 			coremap[index+i] = 0;
@@ -340,6 +339,11 @@ as_create(void)
 void
 as_destroy(struct addrspace *as)
 {
+#if OPT_A3
+	free_kpages(PADDR_TO_KVADDR(as->as_pbase1));
+	free_kpages(PADDR_TO_KVADDR(as->as_pbase2));
+	free_kpages(PADDR_TO_KVADDR(as->as_stackpbase));
+#endif
 	kfree(as);
 }
 

@@ -201,7 +201,7 @@ proc_destroy(struct proc *proc)
   cv_destroy(proc->p_cv);
   lock_destroy(proc->plock);
   array_setsize(proc->children,0);
-  array_cleanup(proc->children);
+  array_destroy(proc->children);
 #endif
 
 	kfree(proc->p_name);
