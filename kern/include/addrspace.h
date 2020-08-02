@@ -40,6 +40,18 @@
 
 struct vnode;
 
+#if OPT_A3
+typedef struct PTE{
+	paddr_t address;
+	int framenumber;
+} PTE;
+
+typedef struct page_table{
+	struct PTE as_pbase1;
+	struct PTE as_pbase2;
+	struct PTE as_stackpbase;
+} page_table;
+#endif
 
 /* 
  * Address space - data structure associated with the virtual memory
@@ -49,15 +61,21 @@ struct vnode;
  */
 
 struct addrspace {
+#if OPT_A3
+  vaddr_t as_vbase1;
+  size_t as_npages1;
+  vaddr_t as_vbase2;
+  size_t as_npages2;
+  page_table pt;
+  bool elf_loaded;
+#else
   vaddr_t as_vbase1;
   paddr_t as_pbase1; // replace this with page table
   size_t as_npages1;
   vaddr_t as_vbase2;
-  paddr_t as_pbase2;
+  paddr_t as_pbase2; // replace this with page table
   size_t as_npages2;
-  paddr_t as_stackpbase;
-#if OPT_A3
-  bool elf_loaded;
+  paddr_t as_stackpbase; // replace this with page table
 #endif
 };
 
