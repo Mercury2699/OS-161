@@ -385,6 +385,7 @@ sys_execv(const char * progname, char * args[])
   for(int i = 0; i < argc; i++) kfree(kargv[i]);
   kfree(kargv);
   kfree(kprogname);
+  as_destroy(old_as);
 
 	/* Warp to user mode. */
 	enter_new_process(argc, (userptr_t) stackptr, stackptr, entrypoint);
